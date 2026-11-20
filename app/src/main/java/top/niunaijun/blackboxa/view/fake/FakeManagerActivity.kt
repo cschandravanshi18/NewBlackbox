@@ -4,13 +4,18 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
 import android.view.Menu
 import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import cbfg.rvadapter.RVAdapter
 import com.afollestad.materialdialogs.MaterialDialog
+import com.afollestad.materialdialogs.customview.customView
+import com.afollestad.materialdialogs.list.listItems
 import com.ferfalk.simplesearchview.SimpleSearchView
 import top.niunaijun.blackbox.entity.location.BLocation
 import top.niunaijun.blackbox.fake.frameworks.BLocationManager
@@ -28,7 +33,6 @@ class FakeManagerActivity : BaseActivity() {
 
     private val viewBinding: ActivityListBinding by inflate()
 
-    
     private lateinit var mAdapter: RVAdapter<FakeLocationBean>
 
     private lateinit var viewModel: FakeLocationViewModel
@@ -42,35 +46,94 @@ class FakeManagerActivity : BaseActivity() {
 
         initToolbar(viewBinding.toolbarLayout.toolbar, R.string.fake_location, true)
 
-        mAdapter = RVAdapter<FakeLocationBean>(this,FakeLocationAdapter()).bind(viewBinding.recyclerView)
+        mAdapter = RVAdapter<FakeLocationBean>(this, FakeLocationAdapter()).bind(viewBinding.recyclerView)
             .setItemClickListener { _, data, _ ->
-
-                val intent = Intent(this, FollowMyLocationOverlay::class.java)
-                intent.putExtra("location", data.fakeLocation)
-                intent.putExtra("pkg", data.packageName)
-
-                locationResult.launch(intent)
+                showLocationModeDialog(data)
             }.setItemLongClickListener { _, item, position ->
-                disableFakeLocation(item,position)
+                disableFakeLocation(item, position)
             }
 
         viewBinding.recyclerView.layoutManager = LinearLayoutManager(this)
-
 
         initSearchView()
         initViewModel()
     }
 
-    private fun disableFakeLocation(item: FakeLocationBean,position:Int) {
+    private fun showLocationModeDialog(data: FakeLocationBean) {
+        val options = listOf("Select on Map", "Enter Coordinates Manually")
+        MaterialDialog(this).show {
+            title(text = data.name)
+            listItems(items = options) { _, index, _ ->
+                if (index == 0) {
+                    val intent = Intent(this@FakeManagerActivity, FollowMyLocationOverlay::class.java)
+                    intent.putExtra("location", data.fakeLocation)
+                    intent.putExtra("pkg", data.packageName)
+                    locationResult.launch(intent)
+                } else {
+                    showManualCoordinateDialog(data)
+                }
+            }
+        }
+    }
+
+    private fun showManualCoordinateDialog(data: FakeLocationBean) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (20 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding / 2, padding, 0)
+        }
+
+        val latInput = EditText(this).apply {
+            hint = "Latitude (e.g. 21.2514)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+            data.fakeLocation?.let {
+                if (it.latitude != 0.0) setText(it.latitude.toString())
+            }
+        }
+
+        val lngInput = EditText(this).apply {
+            hint = "Longitude (e.g. 81.6296)"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+            data.fakeLocation?.let {
+                if (it.longitude != 0.0) setText(it.longitude.toString())
+            }
+        }
+
+        container.addView(latInput)
+        container.addView(lngInput)
+
+        MaterialDialog(this).show {
+            title(text = "Manual Coordinates")
+            customView(view = container, scrollable = true)
+            negativeButton(R.string.cancel)
+            positiveButton(R.string.done) {
+                val latStr = latInput.text.toString().trim()
+                val lngStr = lngInput.text.toString().trim()
+                val lat = latStr.toDoubleOrNull()
+                val lng = lngStr.toDoubleOrNull()
+
+                if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
+                    viewModel.setPattern(currentUserID(), data.packageName, BLocationManager.OWN_MODE)
+                    viewModel.setLocation(currentUserID(), data.packageName, BLocation(lat, lng))
+                    toast(getString(R.string.set_location, lat.toString(), lng.toString()))
+                    loadAppList()
+                } else {
+                    toast("Invalid Latitude (-90 to 90) or Longitude (-180 to 180)")
+                }
+            }
+        }
+    }
+
+    private fun disableFakeLocation(item: FakeLocationBean, position: Int) {
         MaterialDialog(this).show {
             title(R.string.close_fake_location)
-            message(text = getString(R.string.close_app_fake_location,item.name))
+            message(text = getString(R.string.close_app_fake_location, item.name))
             negativeButton(R.string.cancel)
-            positiveButton(R.string.done){
-                BLocationManager.disableFakeLocation(currentUserID(),item.packageName)
-                toast(getString(R.string.close_fake_location_success,item.name))
+            positiveButton(R.string.done) {
+                BLocationManager.disableFakeLocation(currentUserID(), item.packageName)
+                toast(getString(R.string.close_fake_location_success, item.name))
                 item.fakeLocationPattern = BLocationManager.CLOSE_MODE
-                mAdapter.replaceAt(position,item)
+                mAdapter.replaceAt(position, item)
             }
         }
     }
@@ -123,7 +186,6 @@ class FakeManagerActivity : BaseActivity() {
     private val locationResult =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (it.resultCode == RESULT_OK) {
-
                 it.data?.let { data ->
                     val latitude = data.getDoubleExtra("latitude", 0.0)
                     val longitude = data.getDoubleExtra("longitude", 0.0)
@@ -132,11 +194,10 @@ class FakeManagerActivity : BaseActivity() {
                     viewModel.setPattern(currentUserID(), pkg.toString(), BLocationManager.OWN_MODE)
                     viewModel.setLocation(currentUserID(), pkg.toString(), BLocation(latitude, longitude))
 
-                    toast(getString(R.string.set_location,latitude.toString(), longitude.toString()))
+                    toast(getString(R.string.set_location, latitude.toString(), longitude.toString()))
 
                     loadAppList()
                 }
-
             }
         }
 
