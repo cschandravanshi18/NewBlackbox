@@ -55,8 +55,7 @@ class SettingFragment : PreferenceFragmentCompat() {
     }
 
     private fun getUuidFile(context: Context): File {
-        val dir = context.getExternalFilesDir(null) ?: context.filesDir
-        return File(dir, "custom_device_uuid.txt")
+        return File(context.filesDir, "custom_device_uuid.txt")
     }
 
     private fun readSavedUuid(context: Context): String {
@@ -75,6 +74,7 @@ class SettingFragment : PreferenceFragmentCompat() {
                 if (file.exists()) file.delete()
             } else {
                 file.writeText(uuid.trim())
+                file.setReadable(true, false)
             }
         } catch (e: Exception) {
             e.printStackTrace()
