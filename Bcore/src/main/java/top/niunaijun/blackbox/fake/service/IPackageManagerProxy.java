@@ -422,6 +422,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "SimpleAudioPermissionHook: Granting audio permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
+            if (isLocationPermission(permission)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            
 
             
             if (isStorageOrMediaPermission(permission)) {
@@ -452,6 +456,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "CheckSelfPermission: Granting audio permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
+            if (isLocationPermission(permission)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            
 
             
             if (isStorageOrMediaPermission(permission)) {
@@ -482,6 +490,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "ShouldShowRequestPermissionRationale: Not showing rationale for audio permission: " + permission);
                 return false;
             }
+            if (isLocationPermission(permission)) {
+                return false;
+            }
+            
 
             
             if (isStorageOrMediaPermission(permission)) {
@@ -554,6 +566,15 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
         return false;
     }
+
+    private static boolean isLocationPermission(String permission) {
+        if (permission == null) return false;
+        return permission.equals(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                || permission.equals(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                || permission.equals("android.permission.ACCESS_BACKGROUND_LOCATION")
+                || permission.equals("android.permission.FOREGROUND_SERVICE_LOCATION");
+    }
+    
 
     
     private static boolean isAudioPermission(String permission) {
