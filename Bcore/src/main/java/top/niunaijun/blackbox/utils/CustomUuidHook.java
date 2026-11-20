@@ -1,14 +1,20 @@
 package top.niunaijun.blackbox.utils;
 
+import android.content.ContentResolver;
 import android.content.Context;
+import android.provider.Settings;
+import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-import java.security.Provider;
-import java.security.SecureRandomSpi;
-import java.security.Security;
+import java.util.HashMap;
 import java.util.UUID;
+import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.XposedHelpers;
+import top.niunaijun.blackbox.fake.frameworks.BLocationManager;
 
 public class CustomUuidHook {
     private static boolean sInstalled = false;
@@ -16,10 +22,13 @@ public class CustomUuidHook {
     public static String getCustomUuid(Context context) {
         if (context == null) return null;
         try {
-            File extDir = context.getExternalFilesDir(null);
-            File file = (extDir != null)
-                    ? new File(extDir, "custom_device_uuid.txt")
-                    : new File(context.getFilesDir(), "custom_device_uuid.txt");
+            File file = new File(context.getFilesDir(), "custom_device_uuid.txt");
+            if (!file.exists()) {
+                File extDir = context.getExternalFilesDir(null);
+                if (extDir != null) {
+                    file = new File(extDir, "custom_device_uuid.txt");
+                }
+            }
             if (!file.exists()) return null;
 
             BufferedReader reader = new BufferedReader(new FileReader(file));
@@ -35,7 +44,44 @@ public class CustomUuidHook {
 
     public static void install(Context context) {
         if (sInstalled) return;
-        String uuidStr = getCustomUuid(context);
+        sInstalled = true;
+
+        try {
+            XposedHelpers.findAndHookMethod(
+                    Settings.Secure.class,
+                    "getInt",
+                    ContentResolver.class,
+                    String.class,
+                    int.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            String name = (String) Array.get(param.args, 1);
+                            if (Settings.Secure.LOCATION_MODE.equals(name) && BLocationManager.isFakeLocationEnable()) {
+                                param.setResult(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY);
+                            }
+                        }
+                    }
+            );
+            XposedHelpers.findAndHookMethod(
+                    Settings.Secure.class,
+                    "getInt",
+                    ContentResolver.class,
+                    String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            String name = (String) Array.get(param.args, 1);
+                            if (Settings.Secure.LOCATION_MODE.equals(name) && BLocationManager.isFakeLocationEnable()) {
+                                param.setResult(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY);
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable t) {
+            Slog.e("CustomUuidHook", "Failed to hook Settings.Secure.LOCATION_MODE", t);
+        }
+                final String uuidStr = getCustomUuid(context);
         if (uuidStr == null || uuidStr.isEmpty()) return;
 
         final UUID fixedUuid;
@@ -46,78 +92,55 @@ public class CustomUuidHook {
             return;
         }
 
-        sInstalled = true;
-        Slog.d("CustomUuidHook", "Installing Fixed UUID Hook: " + fixedUuid.toString());
+        Slog.d("CustomUuidHook", "Installing Universal UUID Hook: " + uuidStr);
 
-        // 1. In-built Xposed (Pine/SandHook) के ज़रिए UUID.randomUUID() को सीधे हुक करें
         try {
-            Class<?> xposedHelpers = Class.forName("de.robv.android.xposed.XposedHelpers");
-            Class<?> xcMethodHook = Class.forName("de.robv.android.xposed.XC_MethodHook");
-
-            Object callback = java.lang.reflect.Proxy.newProxyInstance(
-                    CustomUuidHook.class.getClassLoader(),
-                    new Class<?>[]{xcMethodHook},
-                    (proxy, method, args) -> null
-            );
-            // XposedBridge.hookMethod का उपयोग
             Method randomUuidMethod = UUID.class.getDeclaredMethod("randomUUID");
-            Class<?> xposedBridge = Class.forName("de.robv.android.xposed.XposedBridge");
-            // यदि एक्सटेंडेड हुक उपलब्ध है तो सीधे कॉल होगा
+            XposedBridge.hookMethod(randomUuidMethod, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    param.setResult(fixedUuid);
+                }
+            });
+        } catch (Throwable t) {
+            Slog.e("CustomUuidHook", "UUID.randomUUID hook failed", t);
+        }
+
+        try {
+            Method putMethod = JSONObject.class.getDeclaredMethod("put", String.class, Object.class);
+            XposedBridge.hookMethod(putMethod, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (param.args != null && param.args.length >= 2) {
+                        Object firstArg = Array.get(param.args, 0);
+                        if (firstArg instanceof String && isUuidKey((String) firstArg)) {
+                            Array.set(param.args, 1, uuidStr);
+                        }
+                    }
+                }
+            });
         } catch (Throwable ignored) {
         }
 
-        // 2. 100% नेटिव Java Security Provider हुक (यह बिना किसी एक्सटर्नल लाइब्रेरी के हर Android वर्ज़न पर UUID.randomUUID() को फिक्स करता है)
         try {
-            byte[] fixedBytes = uuidToBytes(fixedUuid);
-            Provider fixedProvider = new Provider("FixedUUIDProvider", 1.0, "Fixed UUID SecureRandom") {{
-                put("SecureRandom.SHA1PRNG", FixedSecureRandomSpi.class.getName());
-                put("SecureRandom.DEFAULT", FixedSecureRandomSpi.class.getName());
-            }};
-            FixedSecureRandomSpi.sFixedBytes = fixedBytes;
-            Security.insertProviderAt(fixedProvider, 1);
-        } catch (Throwable t) {
-            Slog.e("CustomUuidHook", "Failed to install Security Provider hook", t);
+            XposedHelpers.findAndHookMethod(HashMap.class, "put", Object.class, Object.class, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (param.args != null && param.args.length >= 2) {
+                        Object firstArg = Array.get(param.args, 0);
+                        if (firstArg instanceof String && isUuidKey((String) firstArg)) {
+                            Array.set(param.args, 1, uuidStr);
+                        }
+                    }
+                }
+            });
+        } catch (Throwable ignored) {
         }
     }
 
-    private static byte[] uuidToBytes(UUID uuid) {
-        long msb = uuid.getMostSignificantBits();
-        long lsb = uuid.getLeastSignificantBits();
-        byte[] buffer = new byte[16];
-        for (int i = 0; i < 8; i++) {
-            buffer[i] = (byte) (msb >>> (8 * (7 - i)));
-        }
-        for (int i = 8; i < 16; i++) {
-            buffer[i] = (byte) (lsb >>> (8 * (15 - i)));
-        }
-        // UUID version 4 और variant bits को रीसेट करें ताकि UUID.randomUUID() की बिट-मास्किंग के बाद भी वही UUID बने
-        buffer[6] &= 0x0f;
-        buffer[7] &= 0xff;
-        buffer[8] &= 0x3f;
-        return buffer;
-    }
-
-    public static class FixedSecureRandomSpi extends SecureRandomSpi {
-        public static byte[] sFixedBytes = new byte[16];
-
-        @Override
-        protected void engineSetSeed(byte[] seed) {
-        }
-
-        @Override
-        protected void engineNextBytes(byte[] bytes) {
-            if (bytes == null || sFixedBytes == null) return;
-            for (int i = 0; i < bytes.length; i++) {
-                bytes[i] = sFixedBytes[i % sFixedBytes.length];
-            }
-        }
-
-        @Override
-        protected byte[] engineGenerateSeed(int numBytes) {
-            byte[] out = new byte[numBytes];
-            engineNextBytes(out);
-            return out;
-        }
+    private static boolean isUuidKey(String key) {
+        if (key == null) return false;
+        String lower = key.toLowerCase();
+        return lower.equals("device_uuid") || lower.equals("deviceuuid") || lower.equals("uuid");
     }
 }
-
