@@ -33,7 +33,9 @@ int my_system_property_get(const char *name, char *value) {
     if (orig_system_property_get) {
         return orig_system_property_get(name, value);
     }
-    value = '\0';
+    if (value) {
+        *value = '\0';
+    }
     return 0;
 }
 
