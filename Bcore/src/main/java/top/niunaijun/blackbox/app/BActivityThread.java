@@ -401,8 +401,8 @@ public class BActivityThread extends IBActivityThread.Stub {
 
         NativeCore.init(Build.VERSION.SDK_INT);
         assert packageContext != null;
-        IOCore.get().enableRedirect(packageContext);
         top.niunaijun.blackbox.utils.CustomUuidHook.install(BlackBoxCore.getContext());
+        IOCore.get().enableRedirect(packageContext);
 
         AppBindData bindData = new AppBindData();
         bindData.appInfo = applicationInfo;
