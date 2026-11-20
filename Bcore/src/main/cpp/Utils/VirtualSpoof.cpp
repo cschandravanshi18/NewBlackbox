@@ -13,7 +13,6 @@ struct SpoofedProp {
     const char* value;
 };
 
-// डिवाइस मॉडल, ब्रांड और फ़िंगरप्रिंट हटा दिया गया है ताकि ओरिजिनल डिवाइस मॉडल जाए
 SpoofedProp spoofed_props[] = {
         {"ro.kernel.qemu", "0"},
         {"ro.kernel.android.qemud", ""},
@@ -34,7 +33,7 @@ int my_system_property_get(const char *name, char *value) {
     if (orig_system_property_get) {
         return orig_system_property_get(name, value);
     }
-    value[0] = '\0';
+    value = '\0';
     return 0;
 }
 
