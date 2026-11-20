@@ -116,8 +116,8 @@ class FakeManagerActivity : BaseActivity() {
                 if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
                     val userId = currentUserID()
                     val bLoc = BLocation(lat, lng)
-                    BLocationManager.setPattern(userId, data.packageName, BLocationManager.OWN_MODE)
-                    BLocationManager.setLocation(userId, data.packageName, bLoc)
+                    BLocationManager.get().setPattern(userId, data.packageName, BLocationManager.OWN_MODE)
+                    BLocationManager.get().setLocation(userId, data.packageName, bLoc)
                     BlackBoxCore.get().stopPackage(data.packageName, userId)
                     toast(getString(R.string.set_location, lat.toString(), lng.toString()))
                     loadAppList()
