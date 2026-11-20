@@ -17,6 +17,7 @@ import com.afollestad.materialdialogs.MaterialDialog
 import com.afollestad.materialdialogs.customview.customView
 import com.afollestad.materialdialogs.list.listItems
 import com.ferfalk.simplesearchview.SimpleSearchView
+import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.entity.location.BLocation
 import top.niunaijun.blackbox.fake.frameworks.BLocationManager
 import top.niunaijun.blackboxa.R
@@ -113,8 +114,11 @@ class FakeManagerActivity : BaseActivity() {
                 val lng = lngStr.toDoubleOrNull()
 
                 if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
-                    viewModel.setPattern(currentUserID(), data.packageName, BLocationManager.OWN_MODE)
-                    viewModel.setLocation(currentUserID(), data.packageName, BLocation(lat, lng))
+                    val userId = currentUserID()
+                    val bLoc = BLocation(lat, lng)
+                    BLocationManager.setPattern(userId, data.packageName, BLocationManager.OWN_MODE)
+                    BLocationManager.setLocation(userId, data.packageName, bLoc)
+                    BlackBoxCore.get().stopPackage(data.packageName, userId)
                     toast(getString(R.string.set_location, lat.toString(), lng.toString()))
                     loadAppList()
                 } else {
