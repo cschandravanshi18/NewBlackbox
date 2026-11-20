@@ -1,16 +1,16 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.pm.PackageManager;
+import java.lang.reflect.Array;
+import java.lang.reflect.Method;
 
 import black.android.app.BRActivityThread;
-import black.android.app.BRContextImpl;
 import black.android.os.BRServiceManager;
 import black.android.permission.BRIPermissionManagerStub;
-import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
+import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.service.base.PkgMethodProxy;
 import top.niunaijun.blackbox.fake.service.base.ValueMethodProxy;
-import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
 
@@ -32,7 +32,6 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
     protected void inject(Object baseInvocation, Object proxyInvocation) {
         replaceSystemService("permissionmgr");
         BRActivityThread.getWithException()._set_sPermissionManager(proxyInvocation);
-        
     }
 
     @Override
@@ -46,7 +45,49 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
         addMethodHook(new ValueMethodProxy("addOnPermissionsChangeListener", 0));
         addMethodHook(new ValueMethodProxy("removeOnPermissionsChangeListener", 0));
         addMethodHook(new ValueMethodProxy("checkDeviceIdentifierAccess", false));
-        addMethodHook(new PkgMethodProxy("shouldShowRequestPermissionRationale"));
+        addMethodHook(new ValueMethodProxy("shouldShowRequestPermissionRationale", false));
+
+        // लोकेशन परमिशन को हमेशा GRANTED (0) लौटाएं
+        MethodHook grantLocationHook = new MethodHook() {
+            @Override
+            protected Object hook(Object who, Method method, Object... args) throws Throwable {
+                if (args != null) {
+                    for (int i = 0; i < args.length; i++) {
+                        Object arg = Array.get(args, i);
+                        if (arg instanceof String) {
+                            String perm = (String) arg;
+                            if (perm.contains("LOCATION")) {
+                                return PackageManager.PERMISSION_GRANTED;
+                            }
+                        }
+                    }
+                }
+                return method.invoke(who, args);
+            }
+        };
+        addMethodHook(new MethodHook() {
+            @Override
+            protected String getMethodName() {
+                return "checkPermission";
+            }
+
+            @Override
+            protected Object hook(Object who, Method method, Object... args) throws Throwable {
+                return grantLocationHook.hook(who, method, args);
+            }
+        });
+        addMethodHook(new MethodHook() {
+            @Override
+            protected String getMethodName() {
+                return "checkUidPermission";
+            }
+
+            @Override
+            protected Object hook(Object who, Method method, Object... args) throws Throwable {
+                return grantLocationHook.hook(who, method, args);
+            }
+        });
+
         if (BuildCompat.isOreo()) {
             addMethodHook(new ValueMethodProxy("notifyDexLoad", 0));
             addMethodHook(new ValueMethodProxy("notifyPackageUse", 0));
@@ -59,5 +100,4 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
     public boolean isBadEnv() {
         return false;
     }
-
 }
