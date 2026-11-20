@@ -3,9 +3,12 @@ package top.niunaijun.blackbox.utils;
 import android.content.Context;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 public class CustomUuidHook {
@@ -60,14 +63,12 @@ public class CustomUuidHook {
             return;
         }
 
-        // Java UUID.Holder.numberGenerator को फिक्स सीड वाले SecureRandom से बदलें
-        // ताकि बिना किसी एक्सटर्नल लाइब्रेरी के UUID.randomUUID() हमेशा वही UUID बनाए!
+        // 1. Java UUID.Holder.numberGenerator को ओवरराइड करें
         try {
             Class<?> holderClass = Class.forName("java.util.UUID$Holder");
             Field generatorField = holderClass.getDeclaredField("numberGenerator");
             generatorField.setAccessible(true);
 
-            // Unsafe या Reflection से static final फ़ील्ड अपडेट करें
             java.security.SecureRandom fixedRandom = new java.security.SecureRandom() {
                 @Override
                 public synchronized void nextBytes(byte... bytes) {
@@ -96,12 +97,55 @@ public class CustomUuidHook {
                 Object base = staticFieldBase.invoke(unsafe, generatorField);
                 long offset = (Long) staticFieldOffset.invoke(unsafe, generatorField);
                 putObject.invoke(unsafe, base, offset, fixedRandom);
-                Slog.d("CustomUuidHook", "Successfully replaced UUID numberGenerator via Unsafe!");
             } catch (Throwable unsafeErr) {
                 generatorField.set(null, fixedRandom);
             }
         } catch (Throwable t) {
             Slog.e("CustomUuidHook", "Failed to replace UUID numberGenerator", t);
+        }
+
+        // 2. Flutter SharedPreferences XML फ़ाइलों में मौजूद किसी भी UUID को सीधे ओवरराइट करें
+        patchFlutterSharedPrefs(context, uuidStr);
+    }
+
+    private static void patchFlutterSharedPrefs(Context context, String fixedUuid) {
+        try {
+            File dataRoot = new File(context.getDataDir(), "blackbox/data/user/0");
+            if (!dataRoot.exists()) return;
+            File... appDirs = dataRoot.listFiles();
+            if (appDirs == null) return;
+
+            for (File appDir : appDirs) {
+                File prefsDir = new File(appDir, "shared_prefs");
+                if (!prefsDir.exists()) continue;
+                File... xmlFiles = prefsDir.listFiles();
+                if (xmlFiles == null) continue;
+
+                for (File xml : xmlFiles) {
+                    if (!xml.getName().endsWith(".xml")) continue;
+                    try {
+                        FileInputStream fis = new FileInputStream(xml);
+                        byte... data = new byte[(int) xml.length()];
+                        fis.read(data);
+                        fis.close();
+
+                        String content = new String(data, StandardCharsets.UTF_8);
+                        // किसी भी 36-अक्षर के मानक UUID पैटर्न को हमारे फिक्स UUID से बदलें
+                        String replaced = content.replaceAll(
+                                "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                                fixedUuid
+                        );
+                        if (!content.equals(replaced)) {
+                            FileOutputStream fos = new FileOutputStream(xml);
+                            fos.write(replaced.getBytes(StandardCharsets.UTF_8));
+                            fos.close();
+                            Slog.d("CustomUuidHook", "Patched UUID in " + xml.getAbsolutePath());
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
         }
     }
 }
