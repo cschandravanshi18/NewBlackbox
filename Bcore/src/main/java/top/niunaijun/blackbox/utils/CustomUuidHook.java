@@ -63,7 +63,6 @@ public class CustomUuidHook {
             return;
         }
 
-        // 1. Java UUID.Holder.numberGenerator को ओवरराइड करें
         try {
             Class<?> holderClass = Class.forName("java.util.UUID$Holder");
             Field generatorField = holderClass.getDeclaredField("numberGenerator");
@@ -104,7 +103,6 @@ public class CustomUuidHook {
             Slog.e("CustomUuidHook", "Failed to replace UUID numberGenerator", t);
         }
 
-        // 2. Flutter SharedPreferences XML फ़ाइलों में मौजूद किसी भी UUID को सीधे ओवरराइट करें
         patchFlutterSharedPrefs(context, uuidStr);
     }
 
@@ -112,25 +110,24 @@ public class CustomUuidHook {
         try {
             File dataRoot = new File(context.getDataDir(), "blackbox/data/user/0");
             if (!dataRoot.exists()) return;
-            File... appDirs = dataRoot.listFiles();
+            var appDirs = dataRoot.listFiles();
             if (appDirs == null) return;
 
             for (File appDir : appDirs) {
                 File prefsDir = new File(appDir, "shared_prefs");
                 if (!prefsDir.exists()) continue;
-                File... xmlFiles = prefsDir.listFiles();
+                var xmlFiles = prefsDir.listFiles();
                 if (xmlFiles == null) continue;
 
                 for (File xml : xmlFiles) {
                     if (!xml.getName().endsWith(".xml")) continue;
                     try {
                         FileInputStream fis = new FileInputStream(xml);
-                        byte... data = new byte[(int) xml.length()];
+                        var data = new byte[(int) xml.length()];
                         fis.read(data);
                         fis.close();
 
                         String content = new String(data, StandardCharsets.UTF_8);
-                        // किसी भी 36-अक्षर के मानक UUID पैटर्न को हमारे फिक्स UUID से बदलें
                         String replaced = content.replaceAll(
                                 "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
                                 fixedUuid
