@@ -105,15 +105,6 @@ public class CustomUuidHook {
         }
 
         patchFlutterSharedPrefs(context, uuidStr);
-        new Thread(() -> {
-            for (int i = 0; i < 10; i++) {
-                try {
-                    Thread.sleep(500);
-                    patchFlutterSharedPrefs(context, uuidStr);
-                } catch (Throwable ignored) {
-                }
-            }
-        }).start();
     }
 
     private static void patchFlutterSharedPrefs(Context context, String fixedUuid) {
@@ -145,43 +136,21 @@ public class CustomUuidHook {
                 prefsDir.mkdirs();
             }
 
+            // FlutterSharedPreferences.xml में सभी संभावित नामों से फिक्स UUID लिखें
             File flutterPrefs = new File(prefsDir, "FlutterSharedPreferences.xml");
-            if (!flutterPrefs.exists()) {
-                String initialXml = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
-                        "<map>\n" +
-                        "    <string name=\"flutter.device_uuid\">" + fixedUuid + "</string>\n" +
-                        "</map>\n";
-                FileOutputStream fos = new FileOutputStream(flutterPrefs);
-                fos.write(initialXml.getBytes(StandardCharsets.UTF_8));
-                fos.close();
-                Slog.d("CustomUuidHook", "Created FlutterSharedPreferences.xml for " + appDir.getName());
+            if (flutterPrefs.exists()) {
+                flutterPrefs.setWritable(true);
             }
-
-            var xmlFiles = prefsDir.listFiles();
-            if (xmlFiles == null) return;
-
-            for (File xml : xmlFiles) {
-                if (!xml.getName().endsWith(".xml")) continue;
-                try {
-                    FileInputStream fis = new FileInputStream(xml);
-                    var data = new byte[(int) xml.length()];
-                    fis.read(data);
-                    fis.close();
-
-                    String content = new String(data, StandardCharsets.UTF_8);
-                    String replaced = content.replaceAll(
-                            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
-                            fixedUuid
-                    );
-                    if (!content.equals(replaced)) {
-                        FileOutputStream fos = new FileOutputStream(xml);
-                        fos.write(replaced.getBytes(StandardCharsets.UTF_8));
-                        fos.close();
-                        Slog.d("CustomUuidHook", "Patched UUID in " + xml.getName());
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
+            String initialXml = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
+                    "<map>\n" +
+                    "    <string name=\"flutter.device_uuid\">" + fixedUuid + "</string>\n" +
+                    "    <string name=\"device_uuid\">" + fixedUuid + "</string>\n" +
+                    "</map>\n";
+            FileOutputStream fos = new FileOutputStream(flutterPrefs);
+            fos.write(initialXml.getBytes(StandardCharsets.UTF_8));
+            fos.close();
+            flutterPrefs.setReadOnly();
+            Slog.d("CustomUuidHook", "Locked FlutterSharedPreferences.xml with fixed UUID for " + appDir.getName());
         } catch (Throwable ignored) {
         }
     }
