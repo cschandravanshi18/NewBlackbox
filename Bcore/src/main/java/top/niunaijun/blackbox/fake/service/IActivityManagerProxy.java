@@ -783,6 +783,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     || permission.equals(Manifest.permission.SEND_SMS)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
+            if (permission != null && (permission.equals(Manifest.permission.ACCESS_FINE_LOCATION)
+                    || permission.equals(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    || permission.equals("android.permission.ACCESS_BACKGROUND_LOCATION"))) {
+            return PackageManager.PERMISSION_GRANTED;
+            }
+            
             
             
             if (isAudioPermission(permission)) {
