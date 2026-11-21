@@ -55,7 +55,9 @@ public class ActivityManagerCommonProxy {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         try {
                             Object mainThread = BlackBoxCore.mainThread();
-                            Activity activity = BRActivityThread.get(mainThread).getActivity(resultTo);
+                            Method getAct = mainThread.getClass().getMethod("getActivity", IBinder.class);
+                            Activity activity = (Activity) getAct.invoke(mainThread, resultTo);
+
                             if (activity != null) {
                                 Method m = Activity.class.getDeclaredMethod("onRequestPermissionsResult", int.class, String[].class, int[].class);
                                 m.setAccessible(true);
