@@ -47,11 +47,11 @@ public class CustomUuidHook {
         return null;
     }
 
-    public static void install(Context context) {
+    public static void install(final Context context) {
         if (sInstalled) return;
         sInstalled = true;
 
-        String uuidStr = readUuidFromDisk(context);
+        final String uuidStr = readUuidFromDisk(context);
         if (uuidStr == null || uuidStr.isEmpty()) return;
 
         try {
@@ -63,6 +63,7 @@ public class CustomUuidHook {
             return;
         }
 
+        // 1. Java UUID.Holder.numberGenerator को ओवरराइड करें
         try {
             Class<?> holderClass = Class.forName("java.util.UUID$Holder");
             Field generatorField = holderClass.getDeclaredField("numberGenerator");
@@ -103,7 +104,17 @@ public class CustomUuidHook {
             Slog.e("CustomUuidHook", "Failed to replace UUID numberGenerator", t);
         }
 
+        // 2. Flutter SharedPreferences XML को पहले से तैयार करें और लाइव मॉनिटर करें
         patchFlutterSharedPrefs(context, uuidStr);
+        new Thread(() -> {
+            for (int i = 0; i < 15; i++) {
+                try {
+                    Thread.sleep(1000);
+                    patchFlutterSharedPrefs(context, uuidStr);
+                } catch (Throwable ignored) {
+                }
+            }
+        }).start();
     }
 
     private static void patchFlutterSharedPrefs(Context context, String fixedUuid) {
@@ -115,7 +126,23 @@ public class CustomUuidHook {
 
             for (File appDir : appDirs) {
                 File prefsDir = new File(appDir, "shared_prefs");
-                if (!prefsDir.exists()) continue;
+                if (!prefsDir.exists()) {
+                    prefsDir.mkdirs();
+                }
+
+                // पहले से FlutterSharedPreferences.xml में flutter.device_uuid सेट कर दें
+                File flutterPrefs = new File(prefsDir, "FlutterSharedPreferences.xml");
+                if (!flutterPrefs.exists()) {
+                    String initialXml = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
+                            "<map>\n" +
+                            "    <string name=\"flutter.device_uuid\">" + fixedUuid + "</string>\n" +
+                            "</map>\n";
+                    FileOutputStream fos = new FileOutputStream(flutterPrefs);
+                    fos.write(initialXml.getBytes(StandardCharsets.UTF_8));
+                    fos.close();
+                    Slog.d("CustomUuidHook", "Pre-seeded FlutterSharedPreferences.xml with fixed UUID");
+                }
+
                 var xmlFiles = prefsDir.listFiles();
                 if (xmlFiles == null) continue;
 
@@ -136,7 +163,7 @@ public class CustomUuidHook {
                             FileOutputStream fos = new FileOutputStream(xml);
                             fos.write(replaced.getBytes(StandardCharsets.UTF_8));
                             fos.close();
-                            Slog.d("CustomUuidHook", "Patched UUID in " + xml.getAbsolutePath());
+                            Slog.d("CustomUuidHook", "Patched UUID in " + xml.getName());
                         }
                     } catch (Throwable ignored) {
                     }
@@ -145,4 +172,4 @@ public class CustomUuidHook {
         } catch (Throwable ignored) {
         }
     }
-}
+                        }
