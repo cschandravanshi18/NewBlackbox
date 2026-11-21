@@ -166,7 +166,12 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
                 return null;
             }
         }
-        return super.execStartActivity(who, contextThread, token, target, intent, requestCode, options);
+        try {
+            return super.execStartActivity(who, contextThread, token, target, intent, requestCode, options);
+        } catch (Throwable t) {
+            if (t instanceof RuntimeException) throw (RuntimeException) t;
+            throw new RuntimeException(t);
+        }
     }
 
     public Activity newActivity(ClassLoader cl, String className, Intent intent) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
