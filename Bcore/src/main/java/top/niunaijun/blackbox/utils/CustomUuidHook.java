@@ -103,6 +103,7 @@ public class CustomUuidHook {
         } catch (Throwable t) {
             Slog.e("CustomUuidHook", "Failed to replace UUID numberGenerator", t);
         }
+
         patchFlutterSharedPrefs(context, uuidStr);
         new Thread(() -> {
             for (int i = 0; i < 10; i++) {
