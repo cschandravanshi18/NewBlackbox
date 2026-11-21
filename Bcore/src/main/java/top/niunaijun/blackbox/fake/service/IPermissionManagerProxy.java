@@ -96,4 +96,18 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
     public boolean isBadEnv() {
         return false;
     }
+    @Override
+    public Object invoke(Object proxy, Method method, Object... args) throws Throwable {
+        String mName = method.getName();
+        if (mName != null && mName.startsWith("check") && mName.contains("Permission") && args != null) {
+            for (int i = 0; i < args.length; i++) {
+                Object arg = Array.get(args, i);
+                if (arg instanceof String && ((String) arg).contains("LOCATION")) {
+                    return PackageManager.PERMISSION_GRANTED;
+                }
+            }
+        }
+        return super.invoke(proxy, method, args);
+    }
+    
 }
