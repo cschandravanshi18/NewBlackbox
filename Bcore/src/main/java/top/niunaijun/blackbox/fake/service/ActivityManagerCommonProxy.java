@@ -58,17 +58,25 @@ public class ActivityManagerCommonProxy {
                             Method getAct = mainThread.getClass().getMethod("getActivity", IBinder.class);
                             Activity activity = (Activity) getAct.invoke(mainThread, resultTo);
                             if (activity != null) {
-                                // Android Activity का mHasCurrentPermissionsRequest लॉक अनलॉक करें
                                 try {
                                     java.lang.reflect.Field f = Activity.class.getDeclaredField("mHasCurrentPermissionsRequest");
                                     f.setAccessible(true);
                                     f.setBoolean(activity, false);
                                 } catch (Throwable ignored) {
                                 }
-                                Method m = Activity.class.getDeclaredMethod("onRequestPermissionsResult", int.class, String[].class, int[].class);
-                                m.setAccessible(true);
-                                m.invoke(activity, requestCode, permissions, grantResults);
-                                Slog.d(TAG, "Auto-granted permissions and unlocked Activity!");
+                                Intent resultIntent = new Intent("android.content.pm.action.REQUEST_PERMISSIONS");
+                                resultIntent.putExtra("android.content.pm.extra.REQUEST_PERMISSIONS_NAMES", permissions);
+                                resultIntent.putExtra("android.content.pm.extra.REQUEST_PERMISSIONS_RESULTS", grantResults);
+                                try {
+                                    Method dispatch = Activity.class.getDeclaredMethod("dispatchRequestPermissionsResult", int.class, Intent.class);
+                                    dispatch.setAccessible(true);
+                                    dispatch.invoke(activity, requestCode, resultIntent);
+                                } catch (Throwable e) {
+                                    Method m = Activity.class.getDeclaredMethod("onRequestPermissionsResult", int.class, String[].class, int[].class);
+                                    m.setAccessible(true);
+                                    m.invoke(activity, requestCode, permissions, grantResults);
+                                }
+                                Slog.d(TAG, "Dispatched GRANTED permissions result to Activity!");
                             }
                         } catch (Throwable t) {
                             Slog.e(TAG, "Auto-grant permission callback failed", t);
@@ -77,6 +85,7 @@ public class ActivityManagerCommonProxy {
                     return 0;
                 }
             }
+
 
 
             if (intent.getParcelableExtra("_B_|_target_") != null) {
