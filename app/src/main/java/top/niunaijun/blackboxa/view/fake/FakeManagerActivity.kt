@@ -194,9 +194,13 @@ class FakeManagerActivity : BaseActivity() {
                     val latitude = data.getDoubleExtra("latitude", 0.0)
                     val longitude = data.getDoubleExtra("longitude", 0.0)
                     val pkg = data.getStringExtra("pkg")
+                    val userId = currentUserID()
 
-                    viewModel.setPattern(currentUserID(), pkg.toString(), BLocationManager.OWN_MODE)
-                    viewModel.setLocation(currentUserID(), pkg.toString(), BLocation(latitude, longitude))
+                    if (!pkg.isNullOrEmpty()) {
+                        viewModel.setPattern(userId, pkg, BLocationManager.OWN_MODE)
+                        viewModel.setLocation(userId, pkg, BLocation(latitude, longitude))
+                        BlackBoxCore.get().stopPackage(pkg, userId)
+                    }
 
                     toast(getString(R.string.set_location, latitude.toString(), longitude.toString()))
 
