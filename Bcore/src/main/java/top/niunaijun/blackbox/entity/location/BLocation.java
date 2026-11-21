@@ -8,6 +8,8 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.SystemClock;
 
+import java.lang.reflect.Method;
+
 
 public class BLocation implements Parcelable {
 
@@ -86,6 +88,24 @@ public class BLocation implements Parcelable {
                 '}';
     }
 
+    private static void clearMockFlags(Location location) {
+        if (location == null) {
+            return;
+        }
+        try {
+            Method setMockProvider = Location.class.getMethod("setIsFromMockProvider", boolean.class);
+            setMockProvider.invoke(location, false);
+        } catch (Throwable ignored) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                Method setMock = Location.class.getMethod("setMock", boolean.class);
+                setMock.invoke(location, false);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
     public Location convert2SystemLocation() {
         Location location = new Location(LocationManager.GPS_PROVIDER);
         location.setLatitude(mLatitude);
@@ -96,18 +116,9 @@ public class BLocation implements Parcelable {
         location.setAccuracy(mAccuracy > 0f ? mAccuracy : 40f);
         location.setTime(System.currentTimeMillis());
         location.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
-        try {
-            location.setIsFromMockProvider(false);
-        } catch (Throwable ignored) {
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                location.setMock(false);
-            } catch (Throwable ignored) {
-            }
-        }
-        Bundle extraBundle = new Bundle();
+        clearMockFlags(location);
 
+        Bundle extraBundle = new Bundle();
         int satelliteCount = 10;
         extraBundle.putInt("satellites", satelliteCount);
         extraBundle.putInt("satellitesvalue", satelliteCount);
