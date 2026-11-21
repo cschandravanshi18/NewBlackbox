@@ -41,13 +41,13 @@ int my_system_property_get(const char *name, char *value) {
 }
 
 static void log_http_headers_if_present(const void* buf, size_t len) {
+static void log_http_headers_if_present(const void* buf, size_t len) {
     if (buf == nullptr || len < 15 || len > 8192) return;
     const char* data = (const char*)buf;
 
-    // जांचें कि क्या बफर में सादा टेक्स्ट HTTP हेडर (User-Agent / Host / GET / POST) है
     if (memmem(data, len, "User-Agent:", 11) != nullptr ||
         memmem(data, len, "user-agent:", 11) != nullptr) {
-        char copy;
+        char copy[2048];
         size_t copy_len = len < sizeof(copy) - 1 ? len : sizeof(copy) - 1;
         memcpy(copy, data, copy_len);
         copy[copy_len] = '\0';
