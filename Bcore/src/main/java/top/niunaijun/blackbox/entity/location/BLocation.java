@@ -1,11 +1,12 @@
-
 package top.niunaijun.blackbox.entity.location;
 
 import android.location.Location;
 import android.location.LocationManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.SystemClock;
 
 
 public class BLocation implements Parcelable {
@@ -16,10 +17,6 @@ public class BLocation implements Parcelable {
     private float mSpeed = 0.0f;
     private float mBearing = 0.0f;
     private float mAccuracy = 0.0f;
-
-
-
-
 
     @Override
     public int describeContents() {
@@ -93,12 +90,24 @@ public class BLocation implements Parcelable {
         Location location = new Location(LocationManager.GPS_PROVIDER);
         location.setLatitude(mLatitude);
         location.setLongitude(mLongitude);
+        location.setAltitude(mAltitude);
         location.setSpeed(mSpeed);
         location.setBearing(mBearing);
-        location.setAccuracy(40f);
+        location.setAccuracy(mAccuracy > 0f ? mAccuracy : 40f);
         location.setTime(System.currentTimeMillis());
+        location.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+        try {
+            location.setIsFromMockProvider(false);
+        } catch (Throwable ignored) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                location.setMock(false);
+            } catch (Throwable ignored) {
+            }
+        }
         Bundle extraBundle = new Bundle();
-        
+
         int satelliteCount = 10;
         extraBundle.putInt("satellites", satelliteCount);
         extraBundle.putInt("satellitesvalue", satelliteCount);
