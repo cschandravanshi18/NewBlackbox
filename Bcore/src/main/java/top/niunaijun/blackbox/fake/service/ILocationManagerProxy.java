@@ -51,12 +51,14 @@ public class ILocationManagerProxy extends BinderInvocationStub {
     private static void clearMockFlags(Location loc) {
         if (loc == null) return;
         try {
-            loc.setIsFromMockProvider(false);
+            Method m = Location.class.getMethod("setIsFromMockProvider", boolean.class);
+            m.invoke(loc, false);
         } catch (Throwable ignored) {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
-                loc.setMock(false);
+                Method m = Location.class.getMethod("setMock", boolean.class);
+                m.invoke(loc, false);
             } catch (Throwable ignored) {
             }
         }
