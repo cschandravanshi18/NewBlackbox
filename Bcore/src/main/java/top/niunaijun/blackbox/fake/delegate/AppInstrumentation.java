@@ -81,7 +81,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         }
         do {
             assert clazz != null;
-            Field... fields = clazz.getDeclaredFields();
+            var fields = clazz.getDeclaredFields();
             for (Field field : fields) {
                 if (Instrumentation.class.isAssignableFrom(field.getType())) {
                     field.setAccessible(true);
@@ -147,14 +147,14 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
             Context who, IBinder contextThread, IBinder token, Activity target,
             Intent intent, int requestCode, Bundle options) {
         if (intent != null && "android.content.pm.action.REQUEST_PERMISSIONS".equals(intent.getAction()) && target != null) {
-            String... permissions = intent.getStringArrayExtra("android.content.pm.extra.REQUEST_PERMISSIONS_NAMES");
+            var permissions = intent.getStringArrayExtra("android.content.pm.extra.REQUEST_PERMISSIONS_NAMES");
             if (permissions != null) {
-                int... grantResults = new int[permissions.length];
+                var grantResults = new int[permissions.length];
                 for (int i = 0; i < permissions.length; i++) {
                     Array.setInt(grantResults, i, PackageManager.PERMISSION_GRANTED);
                 }
-                final String... finalPerms = permissions;
-                final int... finalResults = grantResults;
+                final var finalPerms = permissions;
+                final var finalResults = grantResults;
                 target.runOnUiThread(() -> {
                     try {
                         Method m = Activity.class.getDeclaredMethod("onRequestPermissionsResult", int.class, String[].class, int[].class);
