@@ -3,6 +3,7 @@ package top.niunaijun.blackbox.fake.service;
 import android.content.Context;
 import android.location.Location;
 import android.location.LocationManager;
+import android.os.Build;
 import android.os.IInterface;
 import android.os.SystemClock;
 import android.util.Log;
@@ -46,11 +47,41 @@ public class ILocationManagerProxy extends BinderInvocationStub {
     public boolean isBadEnv() {
         return false;
     }
+
+    private static void clearMockFlags(Location loc) {
+        if (loc == null) return;
+        try {
+            loc.setIsFromMockProvider(false);
+        } catch (Throwable ignored) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                loc.setMock(false);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private static void deliverLocationToCallback(Object callbackObj, Location loc) {
+        if (callbackObj == null || loc == null) return;
+        String[] candidateMethods = {"onLocation", "accept", "onLocationChanged"};
+        for (String methodName : candidateMethods) {
+            try {
+                Method m = callbackObj.getClass().getMethod(methodName, Location.class);
+                m.invoke(callbackObj, loc);
+                return;
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
     public static Location getJitteredSystemLocation() {
         BLocation bLoc = BLocationManager.get().getLocation(BActivityThread.getUserId(), BActivityThread.getAppPackageName());
         if (bLoc == null) return null;
 
         Location loc = bLoc.convert2SystemLocation();
+        if (loc == null) return null;
+
         double baseLat = loc.getLatitude();
         double baseLng = loc.getLongitude();
 
@@ -60,13 +91,18 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         double w = radiusInDegrees * Math.sqrt(u);
         double t = 2 * Math.PI * v;
         double deltaLat = w * Math.cos(t);
-        double deltaLng = (w * Math.sin(t)) / Math.cos(Math.toRadians(baseLat));
+        double cosLat = Math.cos(Math.toRadians(baseLat));
+        if (Math.abs(cosLat) < 1e-6) {
+            cosLat = 1e-6;
+        }
+        double deltaLng = (w * Math.sin(t)) / cosLat;
 
         loc.setLatitude(baseLat + deltaLat);
         loc.setLongitude(baseLng + deltaLng);
         loc.setTime(System.currentTimeMillis());
         loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
         loc.setAccuracy(5.0f + sRandom.nextFloat() * 10.0f);
+        clearMockFlags(loc);
         return loc;
     }
 
@@ -96,7 +132,8 @@ public class ILocationManagerProxy extends BinderInvocationStub {
 
         return super.invoke(proxy, method, args);
     }
-        @ProxyMethod("registerGnssStatusCallback")
+
+    @ProxyMethod("registerGnssStatusCallback")
     public static class RegisterGnssStatusCallback extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
@@ -146,14 +183,10 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
                 Location fakeLoc = getJitteredSystemLocation();
-                if (args != null) {
+                if (args != null && fakeLoc != null) {
                     for (Object arg : args) {
-                        if (arg instanceof IInterface) {
-                            try {
-                                Method onLoc = arg.getClass().getMethod("onLocation", Location.class);
-                                onLoc.invoke(arg, fakeLoc);
-                            } catch (Throwable ignored) {
-                            }
+                        if (arg != null) {
+                            deliverLocationToCallback(arg, fakeLoc);
                         }
                     }
                 }
@@ -162,7 +195,8 @@ public class ILocationManagerProxy extends BinderInvocationStub {
             return method.invoke(who, args);
         }
     }
-        @ProxyMethod("requestLocationUpdates")
+
+    @ProxyMethod("requestLocationUpdates")
     public static class RequestLocationUpdates extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
@@ -171,9 +205,12 @@ public class ILocationManagerProxy extends BinderInvocationStub {
                     if (arg instanceof IInterface) {
                         IInterface listener = (IInterface) arg;
                         BLocationManager.get().requestLocationUpdates(listener.asBinder());
-                        try {
-                            BRILocationListener.get(listener).onLocationChanged(getJitteredSystemLocation());
-                        } catch (Throwable ignored) {
+                        Location jittered = getJitteredSystemLocation();
+                        if (jittered != null) {
+                            try {
+                                BRILocationListener.get(listener).onLocationChanged(jittered);
+                            } catch (Throwable ignored) {
+                            }
                         }
                         return 0;
                     }
