@@ -6,16 +6,19 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.PersistableBundle;
 import android.util.Log;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 import black.android.app.BRActivity;
 import black.android.app.BRActivityThread;
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.HookManager;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
@@ -78,7 +81,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         }
         do {
             assert clazz != null;
-            Field[] fields = clazz.getDeclaredFields();
+            Field... fields = clazz.getDeclaredFields();
             for (Field field : fields) {
                 if (Instrumentation.class.isAssignableFrom(field.getType())) {
                     field.setAccessible(true);
@@ -118,7 +121,6 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     @Override
     public Application newApplication(ClassLoader cl, String className, Context context) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         ContextCompat.fix(context);
-
         return super.newApplication(cl, className, context);
     }
 
@@ -138,6 +140,33 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     public void callApplicationOnCreate(Application app) {
         checkHCallback();
         super.callApplicationOnCreate(app);
+    }
+
+    @Override
+    public ActivityResult execStartActivity(
+            Context who, IBinder contextThread, IBinder token, Activity target,
+            Intent intent, int requestCode, Bundle options) {
+        if (intent != null && "android.content.pm.action.REQUEST_PERMISSIONS".equals(intent.getAction()) && target != null) {
+            String... permissions = intent.getStringArrayExtra("android.content.pm.extra.REQUEST_PERMISSIONS_NAMES");
+            if (permissions != null) {
+                int... grantResults = new int[permissions.length];
+                for (int i = 0; i < permissions.length; i++) {
+                    Array.setInt(grantResults, i, PackageManager.PERMISSION_GRANTED);
+                }
+                final String... finalPerms = permissions;
+                final int... finalResults = grantResults;
+                target.runOnUiThread(() -> {
+                    try {
+                        Method m = Activity.class.getDeclaredMethod("onRequestPermissionsResult", int.class, String[].class, int[].class);
+                        m.setAccessible(true);
+                        m.invoke(target, requestCode, finalPerms, finalResults);
+                    } catch (Throwable ignored) {
+                    }
+                });
+                return null;
+            }
+        }
+        return super.execStartActivity(who, contextThread, token, target, intent, requestCode, options);
     }
 
     public Activity newActivity(ClassLoader cl, String className, Intent intent) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
