@@ -71,6 +71,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
             try {
                 Method m = callbackObj.getClass().getMethod(methodName, Location.class);
                 m.invoke(callbackObj, loc);
+                Log.d(TAG, "Delivered location via callback method: " + methodName);
                 return;
             } catch (Throwable ignored) {
             }
@@ -78,11 +79,19 @@ public class ILocationManagerProxy extends BinderInvocationStub {
     }
 
     public static Location getJitteredSystemLocation() {
-        BLocation bLoc = BLocationManager.get().getLocation(BActivityThread.getUserId(), BActivityThread.getAppPackageName());
-        if (bLoc == null) return null;
+        int userId = BActivityThread.getUserId();
+        String pkg = BActivityThread.getAppPackageName();
+        BLocation bLoc = BLocationManager.get().getLocation(userId, pkg);
+        if (bLoc == null) {
+            Log.w(TAG, "getJitteredSystemLocation: bLoc is null for pkg=" + pkg + ", userId=" + userId);
+            return null;
+        }
 
         Location loc = bLoc.convert2SystemLocation();
-        if (loc == null) return null;
+        if (loc == null) {
+            Log.w(TAG, "getJitteredSystemLocation: convert2SystemLocation returned null");
+            return null;
+        }
 
         double baseLat = loc.getLatitude();
         double baseLng = loc.getLongitude();
@@ -105,6 +114,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
         loc.setAccuracy(5.0f + sRandom.nextFloat() * 10.0f);
         clearMockFlags(loc);
+        Log.d(TAG, "Jittered location for " + pkg + ": lat=" + loc.getLatitude() + ", lng=" + loc.getLongitude());
         return loc;
     }
 
@@ -123,11 +133,13 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         }
 
         String mName = method.getName();
-        if (BLocationManager.isFakeLocationEnable()) {
+        boolean fakeEnabled = BLocationManager.isFakeLocationEnable();
+        if (fakeEnabled) {
             if (mName.equals("isLocationEnabled") ||
                 mName.equals("isLocationEnabledForUser") ||
                 mName.equals("isProviderEnabled") ||
                 mName.equals("isProviderEnabledForUser")) {
+                Log.d(TAG, "Returning true for " + mName + " in pkg=" + packageName);
                 return true;
             }
         }
@@ -148,6 +160,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
+                Log.d(TAG, "Hooked getLastLocation for " + BActivityThread.getAppPackageName());
                 return getJitteredSystemLocation();
             }
             try {
@@ -166,6 +179,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
+                Log.d(TAG, "Hooked getLastKnownLocation for " + BActivityThread.getAppPackageName());
                 return getJitteredSystemLocation();
             }
             try {
@@ -184,6 +198,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
+                Log.d(TAG, "Hooked getCurrentLocation for " + BActivityThread.getAppPackageName());
                 Location fakeLoc = getJitteredSystemLocation();
                 if (args != null && fakeLoc != null) {
                     for (Object arg : args) {
@@ -203,6 +218,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable() && args != null) {
+                Log.d(TAG, "Hooked requestLocationUpdates for " + BActivityThread.getAppPackageName());
                 for (Object arg : args) {
                     if (arg instanceof IInterface) {
                         IInterface listener = (IInterface) arg;
