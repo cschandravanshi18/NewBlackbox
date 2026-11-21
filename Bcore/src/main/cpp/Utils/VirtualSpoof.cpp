@@ -41,7 +41,6 @@ int my_system_property_get(const char *name, char *value) {
 }
 
 static void log_http_headers_if_present(const void* buf, size_t len) {
-static void log_http_headers_if_present(const void* buf, size_t len) {
     if (buf == nullptr || len < 15 || len > 8192) return;
     const char* data = (const char*)buf;
 
