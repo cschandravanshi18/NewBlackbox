@@ -1,157 +1,209 @@
 package top.niunaijun.blackbox.utils;
 
+import android.content.ContentResolver;
 import android.content.Context;
+import android.provider.Settings;
+import android.util.Log;
+
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.FileReader;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.UUID;
-import top.niunaijun.blackbox.app.BActivityThread;
+
+import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedHelpers;
+import top.niunaijun.blackbox.fake.frameworks.BLocationManager;
 
 public class CustomUuidHook {
-    private static boolean sInstalled = false;
-    private static String sFixedUuidStr = null;
-    private static UUID sFixedUuid = null;
+    private static final String TAG = "CustomUuidHook";
+    private static final String UUID_FILE_NAME = "custom_device_uuid.txt";
+    private static volatile boolean sInstalled = false;
+    private static File sHostFilesDir = null;
 
-    public static String getFixedUuidString() {
-        return sFixedUuidStr;
+    public static void install(Context context) {
+        if (context != null) {
+            sHostFilesDir = context.getFilesDir();
+        }
+        if (sInstalled) {
+            return;
+        }
+        sInstalled = true;
+
+        hookLocationSettings();
+        hookUuidAndPayloads();
+        Log.d(TAG, "CustomUuidHook installed successfully");
     }
 
-    public static UUID getFixedUuid() {
-        return sFixedUuid;
-    }
-
-    public static String readUuidFromDisk(Context context) {
-        if (context == null) return null;
+    private static String getSavedCustomUuid() {
         try {
-            File file = new File(context.getFilesDir(), "custom_device_uuid.txt");
-            if (!file.exists()) {
-                File extDir = context.getExternalFilesDir(null);
-                if (extDir != null) {
-                    file = new File(extDir, "custom_device_uuid.txt");
+            File file = null;
+            if (sHostFilesDir != null) {
+                file = new File(sHostFilesDir, UUID_FILE_NAME);
+            }
+            if (file == null || !file.exists()) {
+                File fallback = new File("/data/user/0/top.niunaijun.blackbox/files", UUID_FILE_NAME);
+                if (fallback.exists()) {
+                    file = fallback;
                 }
             }
-            if (!file.exists()) return null;
-
-            BufferedReader reader = new BufferedReader(new FileReader(file));
-            String line = reader.readLine();
-            reader.close();
-            if (line != null && !line.trim().isEmpty()) {
-                return line.trim();
+            if (file != null && file.exists() && file.canRead()) {
+                try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+                    String line = br.readLine();
+                    if (line != null) {
+                        String trimmed = line.trim();
+                        if (!trimmed.isEmpty()) {
+                            return trimmed;
+                        }
+                    }
+                }
             }
         } catch (Throwable ignored) {
         }
         return null;
     }
 
-    public static void install(final Context context) {
-        if (sInstalled) return;
-        sInstalled = true;
-
-        final String uuidStr = readUuidFromDisk(context);
-        if (uuidStr == null || uuidStr.isEmpty()) return;
-
-        try {
-            sFixedUuid = UUID.fromString(uuidStr);
-            sFixedUuidStr = uuidStr;
-            Slog.d("CustomUuidHook", "Loaded Fixed UUID: " + sFixedUuidStr);
-        } catch (IllegalArgumentException e) {
-            Slog.e("CustomUuidHook", "Invalid UUID format: " + uuidStr);
-            return;
+    private static boolean isTargetUuidKey(Object keyObj) {
+        if (!(keyObj instanceof String)) {
+            return false;
         }
+        String k = ((String) keyObj).toLowerCase();
+        return "device_uuid".equals(k) || "uuid".equals(k) || "deviceuuid".equals(k);
+    }
 
+    private static void hookLocationSettings() {
         try {
-            Class<?> holderClass = Class.forName("java.util.UUID$Holder");
-            Field generatorField = holderClass.getDeclaredField("numberGenerator");
-            generatorField.setAccessible(true);
-
-            java.security.SecureRandom fixedRandom = new java.security.SecureRandom() {
-                @Override
-                public synchronized void nextBytes(byte... bytes) {
-                    if (bytes == null || bytes.length < 16 || sFixedUuid == null) return;
-                    long msb = sFixedUuid.getMostSignificantBits();
-                    long lsb = sFixedUuid.getLeastSignificantBits();
-                    for (int i = 0; i < 8; i++) {
-                        java.lang.reflect.Array.setByte(bytes, i, (byte) (msb >>> (8 * (7 - i))));
+            XposedHelpers.findAndHookMethod(
+                    Settings.Secure.class,
+                    "getInt",
+                    ContentResolver.class,
+                    String.class,
+                    int.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            String name = (String) param.args[1];
+                            if (BLocationManager.isFakeLocationEnable()) {
+                                if (Settings.Secure.LOCATION_MODE.equals(name)) {
+                                    param.setResult(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY);
+                                } else if (Settings.Secure.ALLOW_MOCK_LOCATION.equals(name)) {
+                                    param.setResult(0);
+                                }
+                            }
+                        }
                     }
-                    for (int i = 8; i < 16; i++) {
-                        java.lang.reflect.Array.setByte(bytes, i, (byte) (lsb >>> (8 * (15 - i))));
+            );
+
+            XposedHelpers.findAndHookMethod(
+                    Settings.Secure.class,
+                    "getInt",
+                    ContentResolver.class,
+                    String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            String name = (String) param.args[1];
+                            if (BLocationManager.isFakeLocationEnable()) {
+                                if (Settings.Secure.LOCATION_MODE.equals(name)) {
+                                    param.setResult(Settings.Secure.LOCATION_MODE_HIGH_ACCURACY);
+                                } else if (Settings.Secure.ALLOW_MOCK_LOCATION.equals(name)) {
+                                    param.setResult(0);
+                                }
+                            }
+                        }
                     }
-                }
-            };
+            );
 
-            try {
-                Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
-                Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
-                theUnsafe.setAccessible(true);
-                Object unsafe = theUnsafe.get(null);
-
-                Method staticFieldBase = unsafeClass.getMethod("staticFieldBase", Field.class);
-                Method staticFieldOffset = unsafeClass.getMethod("staticFieldOffset", Field.class);
-                Method putObject = unsafeClass.getMethod("putObject", Object.class, long.class, Object.class);
-
-                Object base = staticFieldBase.invoke(unsafe, generatorField);
-                long offset = (Long) staticFieldOffset.invoke(unsafe, generatorField);
-                putObject.invoke(unsafe, base, offset, fixedRandom);
-            } catch (Throwable unsafeErr) {
-                generatorField.set(null, fixedRandom);
-            }
+            XposedHelpers.findAndHookMethod(
+                    Settings.Secure.class,
+                    "getString",
+                    ContentResolver.class,
+                    String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            String name = (String) param.args[1];
+                            if (BLocationManager.isFakeLocationEnable()) {
+                                if (Settings.Secure.LOCATION_PROVIDERS_ALLOWED.equals(name)) {
+                                    param.setResult("gps,network");
+                                } else if (Settings.Secure.ALLOW_MOCK_LOCATION.equals(name)) {
+                                    param.setResult("0");
+                                }
+                            }
+                        }
+                    }
+            );
         } catch (Throwable t) {
-            Slog.e("CustomUuidHook", "Failed to replace UUID numberGenerator", t);
+            Log.w(TAG, "Failed to hook Settings.Secure: " + t.getMessage());
         }
-
-        patchFlutterSharedPrefs(context, uuidStr);
     }
 
-    private static void patchFlutterSharedPrefs(Context context, String fixedUuid) {
+    private static void hookUuidAndPayloads() {
         try {
-            String pkg = BActivityThread.getAppPackageName();
-            int userId = BActivityThread.getUserId();
-            if (pkg != null && !pkg.isEmpty()) {
-                File appDir = new File(context.getDataDir(), "blackbox/data/user/" + userId + "/" + pkg);
-                applyPrefsPatch(appDir, fixedUuid);
-            }
-
-            File dataRoot = new File(context.getDataDir(), "blackbox/data/user/" + userId);
-            if (dataRoot.exists()) {
-                var appDirs = dataRoot.listFiles();
-                if (appDirs != null) {
-                    for (File dir : appDirs) {
-                        applyPrefsPatch(dir, fixedUuid);
+            XposedHelpers.findAndHookMethod(
+                    UUID.class,
+                    "randomUUID",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            String custom = getSavedCustomUuid();
+                            if (custom != null) {
+                                try {
+                                    param.setResult(UUID.fromString(custom));
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                        }
                     }
-                }
-            }
-        } catch (Throwable ignored) {
+            );
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to hook UUID.randomUUID: " + t.getMessage());
         }
-    }
 
-    private static void applyPrefsPatch(File appDir, String fixedUuid) {
         try {
-            File prefsDir = new File(appDir, "shared_prefs");
-            if (!prefsDir.exists()) {
-                prefsDir.mkdirs();
-            }
+            XposedHelpers.findAndHookMethod(
+                    JSONObject.class,
+                    "put",
+                    String.class,
+                    Object.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            if (isTargetUuidKey(param.args[0])) {
+                                String custom = getSavedCustomUuid();
+                                if (custom != null) {
+                                    param.args[1] = custom;
+                                }
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to hook JSONObject.put: " + t.getMessage());
+        }
 
-            // FlutterSharedPreferences.xml में सभी संभावित नामों से फिक्स UUID लिखें
-            File flutterPrefs = new File(prefsDir, "FlutterSharedPreferences.xml");
-            if (flutterPrefs.exists()) {
-                flutterPrefs.setWritable(true);
-            }
-            String initialXml = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
-                    "<map>\n" +
-                    "    <string name=\"flutter.device_uuid\">" + fixedUuid + "</string>\n" +
-                    "    <string name=\"device_uuid\">" + fixedUuid + "</string>\n" +
-                    "</map>\n";
-            FileOutputStream fos = new FileOutputStream(flutterPrefs);
-            fos.write(initialXml.getBytes(StandardCharsets.UTF_8));
-            fos.close();
-            flutterPrefs.setReadOnly();
-            Slog.d("CustomUuidHook", "Locked FlutterSharedPreferences.xml with fixed UUID for " + appDir.getName());
-        } catch (Throwable ignored) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                    HashMap.class,
+                    "put",
+                    Object.class,
+                    Object.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            if (isTargetUuidKey(param.args[0])) {
+                                String custom = getSavedCustomUuid();
+                                if (custom != null) {
+                                    param.args[1] = custom;
+                                }
+                            }
+                        }
+                    }
+            );
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to hook HashMap.put: " + t.getMessage());
         }
     }
 }
