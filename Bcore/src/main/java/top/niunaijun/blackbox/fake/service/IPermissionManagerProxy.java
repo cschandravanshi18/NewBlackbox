@@ -1,8 +1,11 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.pm.PackageManager;
+import android.util.Log;
+
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
+import java.util.Locale;
 
 import black.android.app.BRActivityThread;
 import black.android.os.BRServiceManager;
@@ -10,12 +13,11 @@ import black.android.permission.BRIPermissionManagerStub;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.service.base.ValueMethodProxy;
+import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
-
 
 public class IPermissionManagerProxy extends BinderInvocationStub {
     public static final String TAG = "IPermissionManagerProxy";
-
     private static final String P = "permissionmgr";
 
     public IPermissionManagerProxy() {
@@ -29,23 +31,48 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
-        replaceSystemService("permissionmgr");
-        BRActivityThread.getWithException()._set_sPermissionManager(proxyInvocation);
+        replaceSystemService(P);
+        try {
+            BRActivityThread.getWithException()._set_sPermissionManager(proxyInvocation);
+        } catch (Throwable ignored) {
+        }
     }
 
-    private Object handleLocationPermission(Object who, Method method, Object[] args) throws Throwable {
-        if (args != null) {
-            for (int i = 0; i < args.length; i++) {
-                Object arg = Array.get(args, i);
-                if (arg instanceof String) {
-                    String perm = (String) arg;
-                    if (perm.contains("LOCATION")) {
-                        return PackageManager.PERMISSION_GRANTED;
+    private static boolean isLocationPermission(String perm) {
+        if (perm == null) return false;
+        String upper = perm.toUpperCase(Locale.ROOT);
+        return upper.contains("LOCATION") || upper.contains("ACCESS_COARSE") || upper.contains("ACCESS_FINE");
+    }
+
+    private static boolean hasLocationPermissionArg(Object[] args) {
+        if (args == null) return false;
+        for (Object arg : args) {
+            if (arg instanceof String && isLocationPermission((String) arg)) {
+                return true;
+            }
+            if (arg instanceof String[]) {
+                for (String s : (String[]) arg) {
+                    if (isLocationPermission(s)) {
+                        return true;
                     }
                 }
             }
         }
-        return method.invoke(who, args);
+        return false;
+    }
+
+    private Object handleLocationPermission(Object who, Method method, Object... args) throws Throwable {
+        MethodParameterUtils.replaceFirstAppPkg(args);
+        if (hasLocationPermissionArg(args)) {
+            Log.d(TAG, "Granting location permission in " + method.getName());
+            return PackageManager.PERMISSION_GRANTED;
+        }
+        try {
+            return method.invoke(who, args);
+        } catch (SecurityException e) {
+            Log.w(TAG, "SecurityException in " + method.getName() + ", returning PERMISSION_DENIED safely", e);
+            return PackageManager.PERMISSION_DENIED;
+        }
     }
 
     @Override
@@ -72,6 +99,7 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
                 return handleLocationPermission(who, method, args);
             }
         });
+
         addMethodHook(new MethodHook() {
             @Override
             protected String getMethodName() {
@@ -96,18 +124,22 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
     public boolean isBadEnv() {
         return false;
     }
+
     @Override
     public Object invoke(Object proxy, Method method, Object... args) throws Throwable {
+        MethodParameterUtils.replaceFirstAppPkg(args);
         String mName = method.getName();
-        if (mName != null && mName.startsWith("check") && mName.contains("Permission") && args != null) {
-            for (int i = 0; i < args.length; i++) {
-                Object arg = Array.get(args, i);
-                if (arg instanceof String && ((String) arg).contains("LOCATION")) {
-                    return PackageManager.PERMISSION_GRANTED;
-                }
-            }
+        if (mName != null && mName.startsWith("check") && mName.contains("Permission") && hasLocationPermissionArg(args)) {
+            Log.d(TAG, "Granting location permission via invoke for " + mName);
+            return PackageManager.PERMISSION_GRANTED;
         }
-        return super.invoke(proxy, method, args);
+        try {
+            return super.invoke(proxy, method, args);
+        } catch (Throwable t) {
+            if (hasLocationPermissionArg(args)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            throw t;
+        }
     }
-    
 }
