@@ -1,9 +1,12 @@
 package top.niunaijun.blackbox.core.system.location;
 
+import android.location.Location;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.IInterface;
 import android.os.Parcel;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.AtomicFile;
 import android.util.SparseArray;
 
@@ -11,9 +14,11 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -39,6 +44,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
     private final BLocationConfig mGlobalConfig = new BLocationConfig();
     private final Map<IBinder, LocationRecord> mLocationListeners = new HashMap<>();
     private final Executor mThreadPool = Executors.newCachedThreadPool();
+    private final Random mRandom = new Random();
 
     public static BLocationManagerService get() {
         return sService;
@@ -230,28 +236,80 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
         mLocationListeners.remove(listener);
     }
 
+    private Location createJitteredLocation(BLocation base) {
+        Location loc = base.convert2SystemLocation();
+        double baseLat = loc.getLatitude();
+        double baseLng = loc.getLongitude();
+
+        double radiusInDegrees = 50.0 / 111320.0;
+        double u = mRandom.nextDouble();
+        double v = mRandom.nextDouble();
+        double w = radiusInDegrees * Math.sqrt(u);
+        double t = 2.0 * Math.PI * v;
+        double deltaLat = w * Math.cos(t);
+        double cosLat = Math.cos(Math.toRadians(baseLat));
+        if (Math.abs(cosLat) < 1e-6) {
+            cosLat = 1e-6;
+        }
+        double deltaLng = (w * Math.sin(t)) / cosLat;
+
+        loc.setLatitude(baseLat + deltaLat);
+        loc.setLongitude(baseLng + deltaLng);
+        loc.setTime(System.currentTimeMillis());
+        loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+        loc.setAccuracy(5.0f + mRandom.nextFloat() * 10.0f);
+
+        try {
+            Method m = Location.class.getMethod("setIsFromMockProvider", boolean.class);
+            m.invoke(loc, false);
+        } catch (Throwable ignored) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                Method m = Location.class.getMethod("setMock", boolean.class);
+                m.invoke(loc, false);
+            } catch (Throwable ignored) {
+            }
+        }
+        return loc;
+    }
+
     private void addTask(IBinder locationListener) {
         mThreadPool.execute(() -> {
-            BLocation lastLocation = null;
-            long l = System.currentTimeMillis();
+            long lastSent = 0L;
             while (locationListener.pingBinder()) {
                 IInterface iInterface = BRILocationListenerStub.get().asInterface(locationListener);
                 LocationRecord locationRecord = mLocationListeners.get(locationListener);
-                if (locationRecord == null)
+                if (locationRecord == null) {
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException ignored) {
+                    }
                     continue;
+                }
                 BLocation location = getLocation(locationRecord.userId, locationRecord.packageName);
-                if (location == null)
-                    continue;
-                if (location.equals(lastLocation) && (System.currentTimeMillis() - l) < 3000) {
+                if (location == null) {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException ignored) {
                     }
                     continue;
                 }
-                lastLocation = location;
-                l = System.currentTimeMillis();
-                BlackBoxCore.get().getHandler().post(() -> BRILocationListener.get(iInterface).onLocationChanged(location.convert2SystemLocation()));
+                if ((System.currentTimeMillis() - lastSent) < 2000) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ignored) {
+                    }
+                    continue;
+                }
+                lastSent = System.currentTimeMillis();
+                Location jittered = createJitteredLocation(location);
+                BlackBoxCore.get().getHandler().post(() -> {
+                    try {
+                        BRILocationListener.get(iInterface).onLocationChanged(jittered);
+                    } catch (Throwable ignored) {
+                    }
+                });
             }
         });
     }
