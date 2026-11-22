@@ -16,7 +16,6 @@ import java.io.File;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 
-import black.android.app.BRActivityThread;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
@@ -30,7 +29,6 @@ import top.niunaijun.blackbox.utils.compat.StartActivityCompat;
 
 import static android.content.pm.PackageManager.GET_META_DATA;
 
-
 public class ActivityManagerCommonProxy {
     public static final String TAG = "CommonStub";
 
@@ -41,22 +39,27 @@ public class ActivityManagerCommonProxy {
             MethodParameterUtils.replaceFirstAppPkg(args);
             Intent intent = getIntent(args);
             Slog.d(TAG, "Hook in : " + intent);
-            assert intent != null;
+            if (intent == null) {
+                return method.invoke(who, args);
+            }
 
-                if ("android.content.pm.action.REQUEST_PERMISSIONS".equals(intent.getAction())) {
-                final var permissions = intent.getStringArrayExtra("android.content.pm.extra.REQUEST_PERMISSIONS_NAMES");
+            if ("android.content.pm.action.REQUEST_PERMISSIONS".equals(intent.getAction())) {
+                final String[] permissions = intent.getStringArrayExtra("android.content.pm.extra.REQUEST_PERMISSIONS_NAMES");
                 final int requestCode = StartActivityCompat.getRequestCode(args);
                 final IBinder resultTo = StartActivityCompat.getResultTo(args);
                 if (permissions != null) {
-                    final var grantResults = new int[permissions.length];
+                    final int[] grantResults = new int[permissions.length];
                     for (int i = 0; i < permissions.length; i++) {
                         Array.setInt(grantResults, i, PackageManager.PERMISSION_GRANTED);
                     }
                     new Handler(Looper.getMainLooper()).post(() -> {
                         try {
                             Object mainThread = BlackBoxCore.mainThread();
-                            Method getAct = mainThread.getClass().getMethod("getActivity", IBinder.class);
-                            Activity activity = (Activity) getAct.invoke(mainThread, resultTo);
+                            Activity activity = null;
+                            if (mainThread != null && resultTo != null) {
+                                Method getAct = mainThread.getClass().getMethod("getActivity", IBinder.class);
+                                activity = (Activity) getAct.invoke(mainThread, resultTo);
+                            }
                             if (activity != null) {
                                 try {
                                     java.lang.reflect.Field f = Activity.class.getDeclaredField("mHasCurrentPermissionsRequest");
@@ -67,11 +70,15 @@ public class ActivityManagerCommonProxy {
                                 Intent resultIntent = new Intent("android.content.pm.action.REQUEST_PERMISSIONS");
                                 resultIntent.putExtra("android.content.pm.extra.REQUEST_PERMISSIONS_NAMES", permissions);
                                 resultIntent.putExtra("android.content.pm.extra.REQUEST_PERMISSIONS_RESULTS", grantResults);
+                                boolean dispatched = false;
                                 try {
                                     Method dispatch = Activity.class.getDeclaredMethod("dispatchRequestPermissionsResult", int.class, Intent.class);
                                     dispatch.setAccessible(true);
                                     dispatch.invoke(activity, requestCode, resultIntent);
-                                } catch (Throwable e) {
+                                    dispatched = true;
+                                } catch (Throwable ignored) {
+                                }
+                                if (!dispatched) {
                                     Method m = Activity.class.getDeclaredMethod("onRequestPermissionsResult", int.class, String[].class, int[].class);
                                     m.setAccessible(true);
                                     m.invoke(activity, requestCode, permissions, grantResults);
@@ -85,8 +92,6 @@ public class ActivityManagerCommonProxy {
                     return 0;
                 }
             }
-
-
 
             if (intent.getParcelableExtra("_B_|_target_") != null) {
                 return method.invoke(who, args);
@@ -116,7 +121,7 @@ public class ActivityManagerCommonProxy {
                 intent.setData(FileProviderHandler.convertFileUri(BActivityThread.getApplication(), intent.getData()));
                 return method.invoke(who, args);
             }
-                        String dataString = intent.getDataString();
+            String dataString = intent.getDataString();
             if (dataString != null && dataString.equals("package:" + BActivityThread.getAppPackageName())) {
                 intent.setData(Uri.parse("package:" + BlackBoxCore.getHostPkg()));
             }
@@ -164,12 +169,14 @@ public class ActivityManagerCommonProxy {
             } else {
                 index = 2;
             }
-            if (Array.get(args, index) instanceof Intent) {
+            if (args != null && index < args.length && Array.get(args, index) instanceof Intent) {
                 return (Intent) Array.get(args, index);
             }
-            for (Object arg : args) {
-                if (arg instanceof Intent) {
-                    return (Intent) arg;
+            if (args != null) {
+                for (Object arg : args) {
+                    if (arg instanceof Intent) {
+                        return (Intent) arg;
+                    }
                 }
             }
             return null;
@@ -181,8 +188,8 @@ public class ActivityManagerCommonProxy {
         @Override
         protected Object hook(Object who, Method method, Object... args) throws Throwable {
             int index = getIntents();
-            var intents = (Intent[]) Array.get(args, index++);
-            var resolvedTypes = (String[]) Array.get(args, index++);
+            Intent[] intents = (Intent[]) Array.get(args, index++);
+            String[] resolvedTypes = (String[]) Array.get(args, index++);
             IBinder resultTo = (IBinder) Array.get(args, index++);
             Bundle options = (Bundle) Array.get(args, index);
 
