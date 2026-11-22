@@ -171,7 +171,36 @@ public class ILocationManagerProxy extends BinderInvocationStub {
 
         String packageName = BActivityThread.getAppPackageName();
         String mName = method.getName();
+        
+        
+        // my additional....//
+        
+        if ("com.vsk_teacher_attendance".equals(packageName) &&
+                (mName.toLowerCase().contains("loc") ||
+                 mName.toLowerCase().contains("provider") ||
+                 mName.toLowerCase().contains("listener") ||
+                 mName.toLowerCase().contains("callback"))) {
+            Log.d(TAG, "ILocationManager call: pkg=" + packageName + ", method=" + mName);
+        }
 
+        if ("com.google.android.gms".equals(packageName)) {
+            if (mName.equals("getLastLocation") ||
+                mName.equals("getLastKnownLocation") ||
+                mName.equals("getCurrentLocation") ||
+                mName.equals("requestLocationUpdates") ||
+                mName.equals("registerLocationListener")) {
+                Log.w(TAG, "Blocking location request from Google Play Services: " + mName);
+                return null;
+            }
+        }
+
+        //end......//
+
+
+
+
+
+        
         if (packageName != null && packageName.equals("com.google.android.gms")) {
             if (mName.equals("getLastLocation") ||
                 mName.equals("getLastKnownLocation") ||
