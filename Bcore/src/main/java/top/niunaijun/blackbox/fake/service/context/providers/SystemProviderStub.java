@@ -14,7 +14,7 @@ import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
 public class SystemProviderStub extends ClassInvocationStub implements BContentProvider {
-    private static final String TAG = "SystemProviderStub";
+    public static final String TAG = "SystemProviderStub";
     private IInterface mBase;
 
     @Override
@@ -61,14 +61,19 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
                     }
                 }
 
-                // Intercept Settings.Secure.ANDROID_ID lookup and return saved custom UUID
-                if (isAndroidIdLookup(args)) {
-                    String customUuid = CustomUuidHook.getSavedCustomUuid();
-                    if (customUuid != null && !customUuid.isEmpty()) {
-                        Slog.d(TAG, "Returning custom device UUID for android_id: " + customUuid);
-                        Bundle bundle = new Bundle();
-                        bundle.putString(Settings.NameValueTable.VALUE, customUuid);
-                        return bundle;
+                String customUuid = CustomUuidHook.getSavedCustomUuid();
+                if (customUuid != null && !customUuid.isEmpty()) {
+                    for (Object arg : args) {
+                        if (arg instanceof String) {
+                            String s = ((String) arg).toLowerCase();
+                            if (Settings.Secure.ANDROID_ID.equalsIgnoreCase((String) arg) ||
+                                    s.contains("android_id") || s.contains("device_id")) {
+                                Bundle out = new Bundle();
+                                out.putString("value", customUuid);
+                                Slog.d(TAG, "Returning custom device UUID for " + arg + ": " + customUuid);
+                                return out;
+                            }
+                        }
                     }
                 }
             }
@@ -92,24 +97,9 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
         return method.invoke(mBase, args);
     }
 
-    private boolean isAndroidIdLookup(Object[] args) {
-        boolean isSecureGet = false;
-        boolean isAndroidIdKey = false;
-        for (Object arg : args) {
-            if (arg instanceof String) {
-                String s = (String) arg;
-                if ("GET_secure".equals(s)) {
-                    isSecureGet = true;
-                } else if (Settings.Secure.ANDROID_ID.equals(s)) {
-                    isAndroidIdKey = true;
-                }
-            }
-        }
-        return isSecureGet && isAndroidIdKey;
-    }
-
     private boolean isSystemProviderAuthority(String authority) {
         if (authority == null) return false;
+
         return authority.equals("settings") ||
                 authority.equals("media") ||
                 authority.equals("downloads") ||
