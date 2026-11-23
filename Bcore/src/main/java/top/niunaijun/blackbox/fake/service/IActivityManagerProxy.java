@@ -705,15 +705,37 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
+    //Start*******
     @ProxyMethod("grantUriPermission")
     public static class GrantUriPermission extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceLastUid(args);
-            return method.invoke(who, args);
+            try {
+                MethodParameterUtils.replaceLastUid(args);
+                return method.invoke(who, args);
+            } catch (Throwable t) {
+                Throwable cause = (t.getCause() != null) ? t.getCause() : t;
+                if (cause instanceof SecurityException) {
+                    Slog.w(TAG, "GrantUriPermission: Suppressing SecurityException for URI grant");
+                    return null;
+                }
+                throw t;
+            }
         }
     }
 
+
+    ///End********
+    //@ProxyMethod("grantUriPermission")
+    //public static class GrantUriPermission extends MethodHook {
+        //@Override
+        //protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            //MethodParameterUtils.replaceLastUid(args);
+            //return method.invoke(who, args);
+        //}
+    //}
+    //end********
+    
     @ProxyMethod("setServiceForeground")
     public static class setServiceForeground extends MethodHook {
         @Override
