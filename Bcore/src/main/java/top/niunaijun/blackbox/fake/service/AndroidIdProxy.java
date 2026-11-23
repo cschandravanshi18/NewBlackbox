@@ -29,16 +29,25 @@ public class AndroidIdProxy extends ClassInvocationStub {
         return false;
     }
 
-    private static String getCustomOrFallbackId(Object currentResult) {
+    private static String getEffectiveAndroidId() {
         String customUuid = CustomUuidHook.getSavedCustomUuid();
         if (customUuid != null && !customUuid.isEmpty()) {
-            Slog.d(TAG, "AndroidId: Returning saved custom UUID: " + customUuid);
+            String hexOnly = customUuid.replace("-", "").trim();
+            if (hexOnly.length() >= 16) {
+                return hexOnly.substring(0, 16).toLowerCase();
+            }
             return customUuid;
         }
-        if (currentResult != null && !"0".equals(currentResult.toString()) && !"".equals(currentResult.toString())) {
-            return currentResult.toString();
-        }
         return generateMockAndroidId();
+    }
+
+    private static boolean isIdKey(String key) {
+        if (key == null) return false;
+        String lower = key.toLowerCase();
+        return lower.contains("android_id") ||
+                lower.contains("secure_id") ||
+                lower.contains("device_id") ||
+                lower.contains("uuid");
     }
 
     @ProxyMethod("getAndroidId")
@@ -46,14 +55,19 @@ public class AndroidIdProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
+                Slog.d(TAG, "AndroidId: Handling getAndroidId call");
                 String customUuid = CustomUuidHook.getSavedCustomUuid();
                 if (customUuid != null && !customUuid.isEmpty()) {
-                    return customUuid;
+                    return getEffectiveAndroidId();
                 }
-                Object result = method.invoke(who, args);
-                return getCustomOrFallbackId(result);
+                Object result = (who != null) ? method.invoke(who, args) : null;
+                if (result == null || "0".equals(result.toString()) || "".equals(result.toString())) {
+                    return generateMockAndroidId();
+                }
+                return result;
             } catch (Exception e) {
-                return getCustomOrFallbackId(null);
+                Slog.w(TAG, "AndroidId: GetAndroidId error, returning effective ID", e);
+                return getEffectiveAndroidId();
             }
         }
     }
@@ -62,28 +76,27 @@ public class AndroidIdProxy extends ClassInvocationStub {
     public static class GetString extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            if (args != null && args.length > 0 && args[0] instanceof String) {
-                String key = (String) args[0];
-                if (key.contains("android_id") || key.contains("ANDROID_ID") ||
-                        key.contains("secure_id") || key.contains("device_id")) {
-                    String customUuid = CustomUuidHook.getSavedCustomUuid();
-                    if (customUuid != null && !customUuid.isEmpty()) {
-                        return customUuid;
-                    }
-                }
-            }
             try {
-                Object result = method.invoke(who, args);
                 if (args != null && args.length > 0 && args[0] instanceof String) {
                     String key = (String) args[0];
-                    if (key.contains("android_id") || key.contains("ANDROID_ID") ||
-                            key.contains("secure_id") || key.contains("device_id")) {
-                        return getCustomOrFallbackId(result);
+                    if (isIdKey(key)) {
+                        String customUuid = CustomUuidHook.getSavedCustomUuid();
+                        if (customUuid != null && !customUuid.isEmpty()) {
+                            return getEffectiveAndroidId();
+                        }
+                    }
+                }
+                Object result = (who != null) ? method.invoke(who, args) : null;
+                if (args != null && args.length > 0 && args[0] instanceof String) {
+                    String key = (String) args[0];
+                    if (isIdKey(key) && (result == null || "0".equals(result.toString()) || "".equals(result.toString()))) {
+                        return generateMockAndroidId();
                     }
                 }
                 return result;
             } catch (Exception e) {
-                return method.invoke(who, args);
+                Slog.w(TAG, "AndroidId: GetString error", e);
+                return (who != null) ? method.invoke(who, args) : getEffectiveAndroidId();
             }
         }
     }
@@ -93,19 +106,17 @@ public class AndroidIdProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
-                Object result = method.invoke(who, args);
+                Object result = (who != null) ? method.invoke(who, args) : null;
                 if (args != null && args.length > 0 && args[0] instanceof String) {
                     String key = (String) args[0];
-                    if (key.contains("android_id") || key.contains("ANDROID_ID") ||
-                            key.contains("secure_id") || key.contains("device_id")) {
-                        if (result == null || ((Number) result).longValue() == 0) {
-                            return generateMockAndroidIdLong();
-                        }
+                    if (isIdKey(key) && (result == null || ((Number) result).longValue() == 0)) {
+                        return generateMockAndroidIdLong();
                     }
                 }
                 return result;
             } catch (Exception e) {
-                return method.invoke(who, args);
+                Slog.w(TAG, "AndroidId: GetLong error", e);
+                return generateMockAndroidIdLong();
             }
         }
     }
@@ -114,28 +125,27 @@ public class AndroidIdProxy extends ClassInvocationStub {
     public static class Get extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            if (args != null && args.length > 0 && args[0] instanceof String) {
-                String key = (String) args[0];
-                if (key.contains("android_id") || key.contains("ANDROID_ID") ||
-                        key.contains("secure_id") || key.contains("device_id")) {
-                    String customUuid = CustomUuidHook.getSavedCustomUuid();
-                    if (customUuid != null && !customUuid.isEmpty()) {
-                        return customUuid;
-                    }
-                }
-            }
             try {
-                Object result = method.invoke(who, args);
                 if (args != null && args.length > 0 && args[0] instanceof String) {
                     String key = (String) args[0];
-                    if (key.contains("android_id") || key.contains("ANDROID_ID") ||
-                            key.contains("secure_id") || key.contains("device_id")) {
-                        return getCustomOrFallbackId(result);
+                    if (isIdKey(key)) {
+                        String customUuid = CustomUuidHook.getSavedCustomUuid();
+                        if (customUuid != null && !customUuid.isEmpty()) {
+                            return getEffectiveAndroidId();
+                        }
+                    }
+                }
+                Object result = (who != null) ? method.invoke(who, args) : null;
+                if (args != null && args.length > 0 && args[0] instanceof String) {
+                    String key = (String) args[0];
+                    if (isIdKey(key) && (result == null || "0".equals(result.toString()) || "".equals(result.toString()))) {
+                        return generateMockAndroidId();
                     }
                 }
                 return result;
             } catch (Exception e) {
-                return method.invoke(who, args);
+                Slog.w(TAG, "AndroidId: Get error", e);
+                return (who != null) ? method.invoke(who, args) : getEffectiveAndroidId();
             }
         }
     }
@@ -144,28 +154,27 @@ public class AndroidIdProxy extends ClassInvocationStub {
     public static class Read extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            if (args != null && args.length > 0 && args[0] instanceof String) {
-                String key = (String) args[0];
-                if (key.contains("android_id") || key.contains("ANDROID_ID") ||
-                        key.contains("secure_id") || key.contains("device_id")) {
-                    String customUuid = CustomUuidHook.getSavedCustomUuid();
-                    if (customUuid != null && !customUuid.isEmpty()) {
-                        return customUuid;
-                    }
-                }
-            }
             try {
-                Object result = method.invoke(who, args);
                 if (args != null && args.length > 0 && args[0] instanceof String) {
                     String key = (String) args[0];
-                    if (key.contains("android_id") || key.contains("ANDROID_ID") ||
-                            key.contains("secure_id") || key.contains("device_id")) {
-                        return getCustomOrFallbackId(result);
+                    if (isIdKey(key)) {
+                        String customUuid = CustomUuidHook.getSavedCustomUuid();
+                        if (customUuid != null && !customUuid.isEmpty()) {
+                            return getEffectiveAndroidId();
+                        }
+                    }
+                }
+                Object result = (who != null) ? method.invoke(who, args) : null;
+                if (args != null && args.length > 0 && args[0] instanceof String) {
+                    String key = (String) args[0];
+                    if (isIdKey(key) && (result == null || "0".equals(result.toString()) || "".equals(result.toString()))) {
+                        return generateMockAndroidId();
                     }
                 }
                 return result;
             } catch (Exception e) {
-                return method.invoke(who, args);
+                Slog.w(TAG, "AndroidId: Read error", e);
+                return (who != null) ? method.invoke(who, args) : getEffectiveAndroidId();
             }
         }
     }
@@ -175,10 +184,14 @@ public class AndroidIdProxy extends ClassInvocationStub {
         for (int i = 0; i < 16; i++) {
             sb.append(Integer.toHexString((int) (Math.random() * 16)));
         }
-        return sb.toString().toUpperCase();
+        String mockId = sb.toString().toLowerCase();
+        Slog.d(TAG, "AndroidId: Generated mock Android ID: " + mockId);
+        return mockId;
     }
 
     private static Long generateMockAndroidIdLong() {
-        return (long) (Math.random() * Long.MAX_VALUE);
+        long mockId = (long) (Math.random() * Long.MAX_VALUE);
+        Slog.d(TAG, "AndroidId: Generated mock Android ID long: " + mockId);
+        return mockId;
     }
 }
