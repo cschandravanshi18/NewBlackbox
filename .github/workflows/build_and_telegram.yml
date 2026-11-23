@@ -1,10 +1,6 @@
 name: Build Private APK Only
 
 on:
-  push:
-    branches:
-      - main
-      - patch-1
   workflow_dispatch:
 
 jobs:
