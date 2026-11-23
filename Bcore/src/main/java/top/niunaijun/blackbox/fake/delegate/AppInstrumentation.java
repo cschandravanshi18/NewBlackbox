@@ -23,6 +23,7 @@ import top.niunaijun.blackbox.fake.hook.HookManager;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
 import top.niunaijun.blackbox.fake.service.IActivityClientProxy;
+import top.niunaijun.blackbox.fake.service.ILocationManagerProxy;
 import top.niunaijun.blackbox.utils.HackAppUtils;
 import top.niunaijun.blackbox.utils.compat.ActivityCompat;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
@@ -109,6 +110,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         HackAppUtils.enableQQLogOutput(activity.getPackageName(), activity.getClassLoader());
         checkHCallback();
         HookManager.get().checkEnv(IActivityClientProxy.class);
+        HookManager.get().checkEnv(ILocationManagerProxy.class);
         ActivityInfo info = BRActivity.get(activity).mActivityInfo();
         ContextCompat.fix(activity);
         ActivityCompat.fix(activity);
