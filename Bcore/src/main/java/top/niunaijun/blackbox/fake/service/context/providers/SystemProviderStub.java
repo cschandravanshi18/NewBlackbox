@@ -1,16 +1,20 @@
 package top.niunaijun.blackbox.fake.service.context.providers;
 
+import android.os.Bundle;
 import android.os.IInterface;
+import android.provider.Settings;
 
 import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
+import top.niunaijun.blackbox.utils.CustomUuidHook;
+import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
-
 public class SystemProviderStub extends ClassInvocationStub implements BContentProvider {
+    private static final String TAG = "SystemProviderStub";
     private IInterface mBase;
 
     @Override
@@ -27,12 +31,10 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
-
     }
 
     @Override
     protected void onBindMethod() {
-
     }
 
     @Override
@@ -45,39 +47,43 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
         if ("asBinder".equals(method.getName())) {
             return method.invoke(mBase, args);
         }
-        
+
         String methodName = method.getName();
-        
-        
-        
+
         if ("call".equals(methodName)) {
-            
             if (args != null) {
                 Class<?> attributionSourceClass = BRAttributionSource.getRealClass();
                 for (int i = 0; i < args.length; i++) {
                     Object arg = args[i];
-                    
-                    if (arg != null && attributionSourceClass != null && 
+                    if (arg != null && attributionSourceClass != null &&
                             arg.getClass().getName().equals(attributionSourceClass.getName())) {
                         ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
+                    }
+                }
+
+                // Intercept Settings.Secure.ANDROID_ID lookup and return saved custom UUID
+                if (isAndroidIdLookup(args)) {
+                    String customUuid = CustomUuidHook.getSavedCustomUuid();
+                    if (customUuid != null && !customUuid.isEmpty()) {
+                        Slog.d(TAG, "Returning custom device UUID for android_id: " + customUuid);
+                        Bundle bundle = new Bundle();
+                        bundle.putString(Settings.NameValueTable.VALUE, customUuid);
+                        return bundle;
                     }
                 }
             }
             return method.invoke(mBase, args);
         }
-        
-        
+
         if (args != null && args.length > 0) {
             Object arg = args[0];
             if (arg instanceof String) {
                 String authority = (String) arg;
-                
                 if (!isSystemProviderAuthority(authority)) {
                     args[0] = BlackBoxCore.getHostPkg();
                 }
             } else if (arg != null) {
                 Class<?> attrSourceClass = BRAttributionSource.getRealClass();
-                
                 if (attrSourceClass != null && arg.getClass().getName().equals(attrSourceClass.getName())) {
                     ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
                 }
@@ -86,20 +92,35 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
         return method.invoke(mBase, args);
     }
 
+    private boolean isAndroidIdLookup(Object[] args) {
+        boolean isSecureGet = false;
+        boolean isAndroidIdKey = false;
+        for (Object arg : args) {
+            if (arg instanceof String) {
+                String s = (String) arg;
+                if ("GET_secure".equals(s)) {
+                    isSecureGet = true;
+                } else if (Settings.Secure.ANDROID_ID.equals(s)) {
+                    isAndroidIdKey = true;
+                }
+            }
+        }
+        return isSecureGet && isAndroidIdKey;
+    }
+
     private boolean isSystemProviderAuthority(String authority) {
         if (authority == null) return false;
-        
-        return authority.equals("settings") || 
-               authority.equals("media") || 
-               authority.equals("downloads") || 
-               authority.equals("contacts") || 
-               authority.equals("call_log") || 
-               authority.equals("telephony") || 
-               authority.equals("calendar") || 
-               authority.equals("browser") || 
-               authority.equals("user_dictionary") || 
-               authority.equals("applications") ||
-               authority.startsWith("com.android.") ||
-               authority.startsWith("android.");
+        return authority.equals("settings") ||
+                authority.equals("media") ||
+                authority.equals("downloads") ||
+                authority.equals("contacts") ||
+                authority.equals("call_log") ||
+                authority.equals("telephony") ||
+                authority.equals("calendar") ||
+                authority.equals("browser") ||
+                authority.equals("user_dictionary") ||
+                authority.equals("applications") ||
+                authority.startsWith("com.android.") ||
+                authority.startsWith("android.");
     }
 }
