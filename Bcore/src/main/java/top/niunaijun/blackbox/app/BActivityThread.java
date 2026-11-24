@@ -402,6 +402,8 @@ public class BActivityThread extends IBActivityThread.Stub {
         NativeCore.init(Build.VERSION.SDK_INT);
         assert packageContext != null;
         top.niunaijun.blackbox.utils.CustomUuidHook.install(BlackBoxCore.getContext());
+        top.niunaijun.blackbox.fake.hook.FlutterSecureStorageHook.hookContextSharedPrefs(packageContext);
+        top.niunaijun.blackbox.fake.hook.FlutterSecureStorageHook.hookContextSharedPrefs(BlackBoxCore.getContext());
         IOCore.get().enableRedirect(packageContext);
 
         AppBindData bindData = new AppBindData();
