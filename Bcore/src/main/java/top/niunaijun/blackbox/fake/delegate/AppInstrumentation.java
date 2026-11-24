@@ -55,7 +55,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
             Instrumentation mInstrumentation = getCurrInstrumentation();
             if (mInstrumentation == this || checkInstrumentation(mInstrumentation))
                 return;
-            mBaseInstrumentation = (Instrumentation) mInstrumentation;
+            mBaseInstrumentation = mInstrumentation;
             BRActivityThread.get(BlackBoxCore.mainThread())._set_mInstrumentation(this);
         } catch (Exception e) {
             e.printStackTrace();
@@ -118,6 +118,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
             activity.getTheme().applyStyle(info.theme, true);
         }
         ActivityManagerCompat.setActivityOrientation(activity, info.screenOrientation);
+        BlackBoxShareAndExplorer.attachDefaultExplorer(activity);
     }
 
     @Override
